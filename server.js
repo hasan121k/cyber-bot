@@ -1,12 +1,121 @@
 const express = require('express');
+const axios = require('axios');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-    
-    // Render এর Environment থেকে আপনার টোকেনটি সিকিউর ভাবে এখানে আসবে
-    const SECRET_TOKEN = process.env.BOT_TOKEN || "";
+app.use(express.json());
 
+// টেলিগ্রাম বট টোকেন (Render Environment থেকে আসবে)
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const CHAT_ID = "-1003120065348";
+const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
+
+// সার্ভারের নিজস্ব মেমরি (HTML থেকে টাইমগুলো এখানে এসে সেভ হবে)
+let botSettings = { masterOn: true, alwaysOn: false, slots: [] };
+
+// ==========================================
+// ১. ২৪ ঘণ্টা চলমান ব্যাকএন্ড ইঞ্জিন (ব্রাউজার ছাড়াই চলবে)
+// ==========================================
+let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null;
+let targetNums = [], currentLevel = 1;
+
+function isBackendTimeActive() {
+    if (!botSettings.masterOn) return false;
+    if (botSettings.alwaysOn) return true;
+
+    const now = new Date();
+    const bdtTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
+    const currentMins = bdtTime.getHours() * 60 + bdtTime.getMinutes();
+
+    for (let slot of botSettings.slots) {
+        if (slot.start && slot.end) {
+            let sMins = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
+            let eMins = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
+
+            if (sMins <= eMins) {
+                if (currentMins >= sMins && currentMins < eMins) return true;
+            } else {
+                if (currentMins >= sMins || currentMins < eMins) return true;
+            }
+        }
+    }
+    return false;
+}
+
+function getUnicodeNumber(str) {
+    const map = {'0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'};
+    return str.split('').map(c => map[c] || c).join('');
+}
+function getUnicodeResult(res) {
+    return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋";
+}
+
+async function sendTelegramMessage(text) {
+    if (!BOT_TOKEN) return;
+    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+    try { await axios.post(url, { chat_id: CHAT_ID, text: text }); } catch (error) { console.log("Telegram Error"); }
+}
+
+async function runBotEngine() {
+    try {
+        const response = await axios.get(API_URL + '?t=' + Date.now());
+        const list = response.data.data.list;
+        const latestData = list[0];
+        
+        if (lastFetchedPeriod !== latestData.issueNumber) {
+            lastFetchedPeriod = latestData.issueNumber;
+            const number = parseInt(latestData.number);
+            const actualResult = number >= 5 ? "BIG" : "SMALL";
+            const finishedPeriodLast3 = latestData.issueNumber.slice(-3);
+            
+            // Win/Loss Check
+            if (currentSignalPeriod && currentSignalPeriod === latestData.issueNumber) {
+                const isWin = (currentSignalResult === actualResult) || targetNums.includes(number);
+                if(isWin) { currentLevel = 1; } else { currentLevel++; if(currentLevel > 4) currentLevel = 1; }
+                
+                let winLossMsg = isWin ? 
+                    `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\n     \n  💥 𝐊𝐔𝐏 𝐌𝐀𝐌𝐀 ☠️` : 
+                    `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\n     \n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑`;
+                    
+                if (isBackendTimeActive()) sendTelegramMessage(winLossMsg);
+            }
+            
+            // Next Prediction
+            const nextPeriodNum = (BigInt(latestData.issueNumber) + 1n).toString();
+            const nextPeriodLast3 = nextPeriodNum.slice(-3);
+            const last5 = list.slice(0, 5).map(x => parseInt(x.number) >= 5 ? "BIG" : "SMALL");
+            const lastNums = list.slice(0, 5).map(x => parseInt(x.number));
+
+            let nextPred = (last5[0] === last5[1] && last5[1] === last5[2]) ? last5[0] : ((last5[0] === "BIG") ? "SMALL" : "BIG");
+            const sum = lastNums.reduce((a, b) => a + b, 0);
+            
+            if (nextPred === "BIG") { targetNums = (sum > 20) ? [0, 2] : [1, 3]; } 
+            else { targetNums = (sum < 25) ? [7, 9] : [6, 8]; }
+
+            currentSignalPeriod = nextPeriodNum;
+            currentSignalResult = nextPred;
+            
+            let signalMsg = `🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \n   \n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\n\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(nextPeriodLast3)} 🔔\n\n        📣 𝐁𝐄𝐓:-${getUnicodeResult(currentSignalResult)} ✅\n\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-${getUnicodeNumber(targetNums[0].toString())}-${getUnicodeNumber(targetNums[1].toString())} 🛑`;
+            
+            if (isBackendTimeActive()) {
+                setTimeout(() => { sendTelegramMessage(signalMsg); }, 2000); 
+            }
+        }
+    } catch (e) {}
+}
+
+// এই ইঞ্জিন প্রতি ২ সেকেন্ড পর পর সার্ভারে নিজে নিজে ঘুরবে
+setInterval(runBotEngine, 2000);
+
+// ==========================================
+// ২. আপনার অরিজিনাল HTML (ডিজাইন ও UI)
+// ==========================================
+app.post('/api/sync', (req, res) => {
+    botSettings = req.body; // HTML থেকে টাইম ডেটা সার্ভারে আসবে
+    res.json({status: "ok"});
+});
+
+app.get('/', (req, res) => {
     const htmlCode = `
 <!DOCTYPE html>
 <html>
@@ -23,7 +132,6 @@ app.get('/', (req, res) => {
             --neon-violet: #8a2be2;
             --cyber-lime: #ccff00;
             --deep-dark: #0b0c1e;
-            --electric-pink: #ff10f0; 
         }
 
         body, html {
@@ -80,7 +188,6 @@ app.get('/', (req, res) => {
         .hidden { display: none !important; }
         #pID { color: rgba(200, 230, 255, 0.7); font-size: 12px; font-weight: bold; }
 
-        /* Switches & Time Inputs */
         .tg-switch-card { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.6); padding: 12px 15px; border-radius: 15px; border: 1px solid var(--neon-cyan); margin-bottom: 10px; }
         .tg-switch-card span { color: var(--neon-cyan); font-weight: 800; font-size: 12px; letter-spacing: 1px;}
         .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
@@ -184,12 +291,7 @@ app.get('/', (req, res) => {
     </div>
 
 <script>
-    // ⚠️ আপনার টোকেনটি সার্ভার থেকে ডাইনামিকভাবে এখানে বসবে (গিটহাবে দেখা যাবে না)
-    const BOT_TOKEN = "\${SECRET_TOKEN}";
-    const CHAT_ID = "-1003120065348"; 
-
     const API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-    
     let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null; 
     let targetNums = [], currentLevel = 1, historyLogs = [];
 
@@ -199,10 +301,10 @@ app.get('/', (req, res) => {
 
     function loadSchedules() {
         for(let i=1; i<=6; i++) {
-            let start = localStorage.getItem(\`tg_start_\${i}\`);
-            let end = localStorage.getItem(\`tg_end_\${i}\`);
-            if(start) document.getElementById(\`start_\${i}\`).value = start;
-            if(end) document.getElementById(\`end_\${i}\`).value = end;
+            let start = localStorage.getItem('tg_start_'+i);
+            let end = localStorage.getItem('tg_end_'+i);
+            if(start) document.getElementById('start_'+i).value = start;
+            if(end) document.getElementById('end_'+i).value = end;
         }
         let alwaysOn = localStorage.getItem('tg_always_on');
         if(alwaysOn !== null) {
@@ -212,88 +314,56 @@ app.get('/', (req, res) => {
 
     function saveSchedules() {
         for(let i=1; i<=6; i++) {
-            let start = document.getElementById(\`start_\${i}\`).value;
-            let end = document.getElementById(\`end_\${i}\`).value;
-            localStorage.setItem(\`tg_start_\${i}\`, start);
-            localStorage.setItem(\`tg_end_\${i}\`, end);
+            localStorage.setItem('tg_start_'+i, document.getElementById('start_'+i).value);
+            localStorage.setItem('tg_end_'+i, document.getElementById('end_'+i).value);
         }
         localStorage.setItem('tg_always_on', document.getElementById('alwaysOnToggle').checked);
+        syncWithServer(); // Save করার সাথে সাথে সার্ভারে পাঠাবে
         alert("✅ Schedule Saved Successfully!");
     }
+
+    // এই ফাংশনটি আপনার ব্রাউজার থেকে টাইমগুলো নিয়ে সার্ভারকে দেয়
+    function syncWithServer() {
+        let slots = [];
+        for(let i=1; i<=6; i++) {
+            slots.push({
+                start: document.getElementById('start_'+i).value || "",
+                end: document.getElementById('end_'+i).value || ""
+            });
+        }
+        fetch('/api/sync', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                masterOn: document.getElementById('masterToggle').checked,
+                alwaysOn: document.getElementById('alwaysOnToggle').checked,
+                slots: slots
+            })
+        });
+    }
+
+    // প্রতি ৩ সেকেন্ডে সার্ভারকে আপডেট করবে
+    setInterval(syncWithServer, 3000);
 
     function isTimeActive() {
         const masterOn = document.getElementById('masterToggle').checked;
         const alwaysOn = document.getElementById('alwaysOnToggle').checked;
         const logText = document.getElementById('tgLogText');
 
-        if (!masterOn) {
-            logText.innerText = "❌ MAIN SWITCH IS OFF";
-            logText.style.color = "#ff10f0";
-            return false;
-        }
-
-        if (alwaysOn) {
-            logText.innerText = "✅ 24/7 FORWARDING ACTIVE";
-            logText.style.color = "#00ffff";
-            return true;
-        }
-
-        const now = new Date();
-        const bdtTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Dhaka"}));
-        const currentMins = bdtTime.getHours() * 60 + bdtTime.getMinutes();
-
-        for(let i=1; i<=6; i++) {
-            let start = document.getElementById(\`start_\${i}\`).value;
-            let end = document.getElementById(\`end_\${i}\`).value;
-            
-            if(start && end) {
-                let sMins = parseInt(start.split(':')[0])*60 + parseInt(start.split(':')[1]);
-                let eMins = parseInt(end.split(':')[0])*60 + parseInt(end.split(':')[1]);
-
-                if (sMins <= eMins) {
-                    if (currentMins >= sMins && currentMins < eMins) {
-                        logText.innerText = \`✅ BDT SCHEDULE ACTIVE (SLOT \${i})\`;
-                        logText.style.color = "#ccff00";
-                        return true;
-                    }
-                } else {
-                    if (currentMins >= sMins || currentMins < eMins) {
-                        logText.innerText = \`✅ BDT SCHEDULE ACTIVE (SLOT \${i})\`;
-                        logText.style.color = "#ccff00";
-                        return true;
-                    }
-                }
-            }
-        }
-
-        logText.innerText = "⏳ WAITING FOR NEXT SCHEDULE TIME...";
-        logText.style.color = "orange";
-        return false;
+        if (!masterOn) { logText.innerText = "❌ MAIN SWITCH IS OFF"; logText.style.color = "#ff10f0"; return; }
+        if (alwaysOn) { logText.innerText = "✅ 24/7 FORWARDING ACTIVE"; logText.style.color = "#00ffff"; return; }
+        
+        logText.innerText = "✅ SCHEDULE SENT TO SERVER"; logText.style.color = "#ccff00";
     }
 
     setInterval(isTimeActive, 1000);
 
-    function sendTelegramMessage(text) {
-        if (!isTimeActive() || !BOT_TOKEN) return; 
-        let url = \`https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\`;
-        fetch(url, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chat_id: CHAT_ID, text: text })
-        }).catch(err => console.error(err));
-    }
-
-    function getUnicodeNumber(str) {
-        const map = {'0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'};
-        return str.split('').map(c => map[c] || c).join('');
-    }
-
-    function getUnicodeResult(res) {
-        return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋 পরীক্ষামূলক";
-    }
+    // টেলিগ্রাম মেসেজ এখন ব্রাউজার থেকে নয়, সার্ভার থেকে যাবে। তাই এটা ফাঁকা রাখা হলো যাতে ডাবল মেসেজ না যায়।
+    function sendTelegramMessage(text) { /* Managed by Backend */ }
 
     window.onload = () => {
         loadSchedules(); 
+        setTimeout(() => syncWithServer(), 1000);
         setTimeout(() => {
             document.getElementById('introScreen').style.opacity = '0';
             setTimeout(() => {
@@ -306,17 +376,13 @@ app.get('/', (req, res) => {
         }, 2000); 
     };
 
-    function clearHistory() {
-        historyLogs = [];
-        document.getElementById('logs').innerHTML = '';
-    }
+    function clearHistory() { historyLogs = []; document.getElementById('logs').innerHTML = ''; }
 
     function startClock() {
         setInterval(() => {
             const rem = 60 - new Date().getSeconds();
             let displayRem = rem === 60 ? "00" : (rem < 10 ? '0' + rem : rem);
             document.getElementById('timer').innerText = \`00:\${displayRem}\`;
-            
             if(rem === 5) sDing.play().catch(()=>{});
             document.getElementById('timer').style.color = rem <= 5 ? "#ff10f0" : "#ccff00";
         }, 1000);
@@ -327,7 +393,6 @@ app.get('/', (req, res) => {
             const r = await fetch(API + '?t=' + Date.now());
             const d = await r.json();
             const latestData = d.data.list[0];
-            
             if (lastFetchedPeriod !== latestData.issueNumber) {
                 processHybrid(latestData.issueNumber, parseInt(latestData.number), d.data.list);
                 lastFetchedPeriod = latestData.issueNumber;
@@ -340,53 +405,30 @@ app.get('/', (req, res) => {
         const finishedPeriodLast3 = finishedPeriod.slice(-3); 
         
         if (currentSignalPeriod && currentSignalPeriod === finishedPeriod) {
-            
             const isWin = (currentSignalResult === actualResult) || targetNums.includes(number);
-            
-            if(isWin) { sWin.play().catch(()=>{}); currentLevel = 1; } 
-            else { sLoss.play().catch(()=>{}); currentLevel++; if(currentLevel > 4) currentLevel = 1; }
-            
+            if(isWin) { sWin.play().catch(()=>{}); currentLevel = 1; } else { sLoss.play().catch(()=>{}); currentLevel++; if(currentLevel > 4) currentLevel = 1; }
             const multiplier = currentLevel === 1 ? "1X" : (currentLevel === 2 ? "3X" : (currentLevel === 3 ? "9X" : "27X"));
             document.getElementById('mLevel').innerText = \`MARTINGALE: LEVEL \${currentLevel} (\${multiplier})\`;
             
-            const entry = {
-                period: finishedPeriodLast3, pred: currentSignalResult,
-                result: \`\${actualResult}(\${number})\`,
-                status: isWin ? 'WIN' : 'LOSS', winClass: isWin ? 'win' : 'loss'
-            };
-            
+            const entry = { period: finishedPeriodLast3, pred: currentSignalResult, result: \`\${actualResult}(\${number})\`, status: isWin ? 'WIN' : 'LOSS', winClass: isWin ? 'win' : 'loss' };
             historyLogs.unshift(entry);
             if (historyLogs.length > 100) historyLogs = historyLogs.slice(0, 100);
-            
             const row = \`<tr><td>\${entry.period}</td><td>\${entry.pred}</td><td>\${entry.result}</td><td class="\${entry.winClass}">\${entry.status}</td></tr>\`;
             document.getElementById('logs').innerHTML = row + document.getElementById('logs').innerHTML;
-
-            if (isTimeActive()) {
-                const boldFinishedPeriod = getUnicodeNumber(finishedPeriodLast3);
-                let winLossMsg = isWin ? 
-                    \`🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-\${boldFinishedPeriod} 👑\\n\\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\\n     \\n  💥 𝐊𝐔𝐏 𝐌𝐀𝐌𝐀 ☠️\` : 
-                    \`🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-\${boldFinishedPeriod} 👑\\n\\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\\n     \\n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑\`;
-                sendTelegramMessage(winLossMsg);
-            }
         }
         
         const nextPeriodNum = (BigInt(finishedPeriod) + 1n).toString();
         const nextPeriodLast3 = nextPeriodNum.slice(-3);
-        
         const last5 = list.slice(0, 5).map(x => parseInt(x.number) >= 5 ? "BIG" : "SMALL");
         const lastNums = list.slice(0, 5).map(x => parseInt(x.number));
         const stratDisp = document.getElementById('stratDisplay');
 
         let nextPred;
-        if (last5[0] === last5[1] && last5[1] === last5[2]) {
-            nextPred = last5[0]; stratDisp.innerText = "MODE: DRAGON PULSE";
-        } else {
-            nextPred = (last5[0] === "BIG") ? "SMALL" : "BIG"; stratDisp.innerText = "MODE: NEURAL REVERSE";
-        }
+        if (last5[0] === last5[1] && last5[1] === last5[2]) { nextPred = last5[0]; stratDisp.innerText = "MODE: DRAGON PULSE"; } 
+        else { nextPred = (last5[0] === "BIG") ? "SMALL" : "BIG"; stratDisp.innerText = "MODE: NEURAL REVERSE"; }
 
         const sum = lastNums.reduce((a, b) => a + b, 0);
-        if (nextPred === "BIG") { targetNums = (sum > 20) ? [0, 2] : [1, 3]; } 
-        else { targetNums = (sum < 25) ? [7, 9] : [6, 8]; }
+        if (nextPred === "BIG") { targetNums = (sum > 20) ? [0, 2] : [1, 3]; } else { targetNums = (sum < 25) ? [7, 9] : [6, 8]; }
 
         currentSignalPeriod = nextPeriodNum;
         currentSignalResult = nextPred;
@@ -395,27 +437,11 @@ app.get('/', (req, res) => {
         document.getElementById('pRes').innerText = currentSignalResult;
         document.getElementById('pRes').style.color = currentSignalResult === "BIG" ? "#00ffff" : "#ccff00";
         document.getElementById('numRow').innerHTML = \`<div class="num-circle">\${targetNums[0]}</div><div class="num-circle">\${targetNums[1]}</div>\`;
-
-        if (isTimeActive()) {
-            const boldNextPeriod = getUnicodeNumber(nextPeriodLast3);
-            const fontResult = getUnicodeResult(currentSignalResult);
-            const boldNum1 = getUnicodeNumber(targetNums[0].toString());
-            const boldNum2 = getUnicodeNumber(targetNums[1].toString());
-            
-            let signalMsg = \`🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \\n    \\n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\\n\\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-\${boldNextPeriod} 🔔\\n\\n        📣 𝐁𝐄𝐓:-\${fontResult} ✅\\n\\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-\${boldNum1}-\${boldNum2} 🛑\`;
-            
-            setTimeout(() => { sendTelegramMessage(signalMsg); }, 2000); 
-        }
     }
 </script>
-
 </body>
-</html>
-    `;
-    
+</html>`;
     res.send(htmlCode);
 });
 
-app.listen(PORT, () => {
-    console.log("✅ Server running perfectly!");
-});
+app.listen(PORT, () => { console.log("✅ Server running perfectly!"); });
