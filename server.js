@@ -1,18 +1,13 @@
-const fs = require('fs');
 const express = require('express');
-const axios = require('axios');
-const path = require('path');
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// JSON বডি রিসিভ করার জন্য এটি প্রয়োজন
-app.use(express.json());
+app.get('/', (req, res) => {
+    
+    // Render এর Environment থেকে আপনার টোকেনটি সিকিউর ভাবে এখানে আসবে
+    const SECRET_TOKEN = process.env.BOT_TOKEN || "";
 
-// ==========================================
-// ১. আপনার ১০০% অরিজিনাল HTML কোড (কোনো পরিবর্তন ছাড়া)
-// ==========================================
-const htmlCode = `
+    const htmlCode = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -115,7 +110,6 @@ const htmlCode = `
                 <span style="font-size: 26px; font-weight: 800;">REAL OWNER  </span><span style="font-size: 22px; color: var(--neon-cyan);">PRO</span>
             </div>
 
-            <!-- Master Toggle -->
             <div class="tg-switch-card">
                 <span><i class="fab fa-telegram"></i> MAIN TG FORWARD</span>
                 <label class="switch">
@@ -124,7 +118,6 @@ const htmlCode = `
                 </label>
             </div>
 
-            <!-- Always On Toggle -->
             <div class="tg-switch-card" style="border-color: var(--neon-violet);">
                 <span style="color: var(--neon-violet);"><i class="fas fa-infinity"></i> 24/7 ALWAYS ON (No Time)</span>
                 <label class="switch">
@@ -135,11 +128,9 @@ const htmlCode = `
             
             <div id="tgLogText" style="color: #ccff00;">✅ CHECKING STATUS...</div>
 
-            <!-- Time Schedule Section -->
             <div class="glass-card" style="padding: 15px; margin-bottom: 20px;" id="scheduleBox">
                 <div style="font-size: 12px; color: var(--neon-cyan); margin-bottom: 12px; font-weight: bold; text-align: center;">📅 BDT TIME SCHEDULE (12 HOURS)</div>
                 
-                <!-- 6 Time Slots -->
                 <div id="timeSlotsContainer">
                     <script>
                         for(let i=1; i<=6; i++) {
@@ -157,7 +148,6 @@ const htmlCode = `
                 <button class="btn-glow" onclick="saveSchedules()">💾 SAVE SCHEDULE</button>
             </div>
 
-            <!-- Hack Dashboard -->
             <div id="hackSection">
                 <div class="status-info">
                     <span>🔷 SERVER: CYBERLINK (1 MIN)</span>
@@ -194,8 +184,8 @@ const htmlCode = `
     </div>
 
 <script>
-    // ⚠️ TELEGRAM CONFIGURATION (Hidden via Server)
-    const BOT_TOKEN = "${process.env.BOT_TOKEN}";
+    // ⚠️ আপনার টোকেনটি সার্ভার থেকে ডাইনামিকভাবে এখানে বসবে (গিটহাবে দেখা যাবে না)
+    const BOT_TOKEN = "\${SECRET_TOKEN}";
     const CHAT_ID = "-1003120065348"; 
 
     const API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
@@ -207,7 +197,6 @@ const htmlCode = `
     const sLoss = new Audio('https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3');
     const sDing = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
-    // 🕒 TIME SCHEDULING LOGIC
     function loadSchedules() {
         for(let i=1; i<=6; i++) {
             let start = localStorage.getItem(\`tg_start_\${i}\`);
@@ -229,10 +218,9 @@ const htmlCode = `
             localStorage.setItem(\`tg_end_\${i}\`, end);
         }
         localStorage.setItem('tg_always_on', document.getElementById('alwaysOnToggle').checked);
-        alert("✅ Schedule Saved Successfully! (সারা জীবনের জন্য সেভ হয়ে গেছে)");
+        alert("✅ Schedule Saved Successfully!");
     }
 
-    // Check if current BDT time is within any schedule
     function isTimeActive() {
         const masterOn = document.getElementById('masterToggle').checked;
         const alwaysOn = document.getElementById('alwaysOnToggle').checked;
@@ -250,7 +238,6 @@ const htmlCode = `
             return true;
         }
 
-        // Get Current BDT Time (Bangladesh)
         const now = new Date();
         const bdtTime = new Date(now.toLocaleString("en-US", {timeZone: "Asia/Dhaka"}));
         const currentMins = bdtTime.getHours() * 60 + bdtTime.getMinutes();
@@ -270,7 +257,6 @@ const htmlCode = `
                         return true;
                     }
                 } else {
-                    // Handle overnight (e.g. 11 PM to 2 AM)
                     if (currentMins >= sMins || currentMins < eMins) {
                         logText.innerText = \`✅ BDT SCHEDULE ACTIVE (SLOT \${i})\`;
                         logText.style.color = "#ccff00";
@@ -285,12 +271,10 @@ const htmlCode = `
         return false;
     }
 
-    // Update Status every second
     setInterval(isTimeActive, 1000);
 
-    // 🚀 TELEGRAM API SENDER
     function sendTelegramMessage(text) {
-        if (!isTimeActive() || !BOT_TOKEN || BOT_TOKEN === 'undefined') return; 
+        if (!isTimeActive() || !BOT_TOKEN) return; 
         let url = \`https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\`;
         fetch(url, {
             method: "POST",
@@ -309,7 +293,7 @@ const htmlCode = `
     }
 
     window.onload = () => {
-        loadSchedules(); // Load saved times
+        loadSchedules(); 
         setTimeout(() => {
             document.getElementById('introScreen').style.opacity = '0';
             setTimeout(() => {
@@ -351,7 +335,6 @@ const htmlCode = `
         } catch (e) {}
     }
 
-    // Main Hack Logic
     function processHybrid(finishedPeriod, number, list) {
         const actualResult = number >= 5 ? "BIG" : "SMALL";
         const finishedPeriodLast3 = finishedPeriod.slice(-3); 
@@ -378,7 +361,6 @@ const htmlCode = `
             const row = \`<tr><td>\${entry.period}</td><td>\${entry.pred}</td><td>\${entry.result}</td><td class="\${entry.winClass}">\${entry.status}</td></tr>\`;
             document.getElementById('logs').innerHTML = row + document.getElementById('logs').innerHTML;
 
-            // 🚀 TELEGRAM: WIN/LOSS MESSAGE
             if (isTimeActive()) {
                 const boldFinishedPeriod = getUnicodeNumber(finishedPeriodLast3);
                 let winLossMsg = isWin ? 
@@ -414,7 +396,6 @@ const htmlCode = `
         document.getElementById('pRes').style.color = currentSignalResult === "BIG" ? "#00ffff" : "#ccff00";
         document.getElementById('numRow').innerHTML = \`<div class="num-circle">\${targetNums[0]}</div><div class="num-circle">\${targetNums[1]}</div>\`;
 
-        // 🚀 TELEGRAM: NEW SIGNAL MESSAGE
         if (isTimeActive()) {
             const boldNextPeriod = getUnicodeNumber(nextPeriodLast3);
             const fontResult = getUnicodeResult(currentSignalResult);
@@ -430,171 +411,11 @@ const htmlCode = `
 
 </body>
 </html>
-`;
-fs.writeFileSync('index.html', htmlCode);
-
-// ==========================================
-// ২. ২৪ ঘণ্টা ব্যাকএন্ড সার্ভার এবং টাইম শিডিউলিং ইঞ্জিন
-// ==========================================
-// Secret Token Hidden
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHAT_ID = "-1003120065348";
-const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
-
-let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null;
-let targetNums = [], currentLevel = 1;
-
-// সার্ভার রিস্টার্ট হলেও যেন টাইম সেভ থাকে তাই JSON ফাইলে স্টোর করা হচ্ছে
-const scheduleFile = path.join(__dirname, 'server_schedule.json');
-let serverSchedule = { masterOn: true, alwaysOn: false, slots: [] };
-
-if (fs.existsSync(scheduleFile)) {
-    try { serverSchedule = JSON.parse(fs.readFileSync(scheduleFile)); } catch (e) {}
-}
-
-// আপনার HTML থেকে ডেটা অটোমেটিকভাবে এই API এর মাধ্যমে ব্যাকএন্ডে আসবে
-app.post('/api/schedule', (req, res) => {
-    serverSchedule = req.body;
-    fs.writeFileSync(scheduleFile, JSON.stringify(serverSchedule, null, 2));
-    res.json({ success: true });
-});
-
-// ✅ ব্যাকএন্ডের নিজস্ব BDT টাইম চেকিং সিস্টেম
-function isBackendTimeActive() {
-    if (!serverSchedule.masterOn) return false;
-    if (serverSchedule.alwaysOn) return true;
-
-    const now = new Date();
-    const bdtTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
-    const currentMins = bdtTime.getHours() * 60 + bdtTime.getMinutes();
-
-    for (let slot of serverSchedule.slots) {
-        if (slot.start && slot.end) {
-            let sMins = parseInt(slot.start.split(':')[0]) * 60 + parseInt(slot.start.split(':')[1]);
-            let eMins = parseInt(slot.end.split(':')[0]) * 60 + parseInt(slot.end.split(':')[1]);
-
-            if (sMins <= eMins) {
-                if (currentMins >= sMins && currentMins < eMins) return true;
-            } else {
-                if (currentMins >= sMins || currentMins < eMins) return true; // রাত ১১টা থেকে ভোর ২টা
-            }
-        }
-    }
-    return false;
-}
-
-function getUnicodeNumber(str) {
-    const map = {'0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'};
-    return str.split('').map(c => map[c] || c).join('');
-}
-function getUnicodeResult(res) {
-    return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋";
-}
-
-async function sendTelegramMessage(text) {
-    if (!BOT_TOKEN) return;
-    const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-    try { await axios.post(url, { chat_id: CHAT_ID, text: text }); } catch (error) {}
-}
-
-async function syncEngine() {
-    try {
-        const response = await axios.get(API_URL + '?t=' + Date.now());
-        const list = response.data.data.list;
-        const latestData = list[0];
-        if (lastFetchedPeriod !== latestData.issueNumber) {
-            lastFetchedPeriod = latestData.issueNumber;
-            processBotLogic(latestData.issueNumber, parseInt(latestData.number), list);
-        }
-    } catch (e) {}
-}
-
-function processBotLogic(finishedPeriod, number, list) {
-    const actualResult = number >= 5 ? "BIG" : "SMALL";
-    const finishedPeriodLast3 = finishedPeriod.slice(-3);
-    
-    if (currentSignalPeriod && currentSignalPeriod === finishedPeriod) {
-        const isWin = (currentSignalResult === actualResult) || targetNums.includes(number);
-        if(isWin) { currentLevel = 1; } else { currentLevel++; if(currentLevel > 4) currentLevel = 1; }
-        
-        const boldFinishedPeriod = getUnicodeNumber(finishedPeriodLast3);
-        let winLossMsg = isWin ? 
-            `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${boldFinishedPeriod} 👑\n\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\n     \n  💥 𝐊𝐔শক 𝐌𝐀𝐌𝐀 ☠️` : 
-            `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${boldFinishedPeriod} 👑\n\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\n     \n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑`;
-            
-        // 🚦 ব্যাকএন্ড চেক করবে আপনার দেওয়া শিডিউল টাইম ঠিক আছে কি না, তারপর মেসেজ পাঠাবে
-        if (isBackendTimeActive()) {
-            sendTelegramMessage(winLossMsg);
-        }
-    }
-    
-    const nextPeriodNum = (BigInt(finishedPeriod) + 1n).toString();
-    const nextPeriodLast3 = nextPeriodNum.slice(-3);
-    const last5 = list.slice(0, 5).map(x => parseInt(x.number) >= 5 ? "BIG" : "SMALL");
-    const lastNums = list.slice(0, 5).map(x => parseInt(x.number));
-
-    let nextPred = (last5[0] === last5[1] && last5[1] === last5[2]) ? last5[0] : ((last5[0] === "BIG") ? "SMALL" : "BIG");
-
-    const sum = lastNums.reduce((a, b) => a + b, 0);
-    if (nextPred === "BIG") { targetNums = (sum > 20) ? [0, 2] : [1, 3]; } else { targetNums = (sum < 25) ? [7, 9] : [6, 8]; }
-
-    currentSignalPeriod = nextPeriodNum;
-    currentSignalResult = nextPred;
-
-    const boldNextPeriod = getUnicodeNumber(nextPeriodLast3);
-    const fontResult = getUnicodeResult(currentSignalResult);
-    const boldNum1 = getUnicodeNumber(targetNums[0].toString());
-    const boldNum2 = getUnicodeNumber(targetNums[1].toString());
-    
-    let signalMsg = `🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \n   \n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\n\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-${boldNextPeriod} 🔔\n\n        📣 𝐁𝐄𝐓:-${fontResult} ✅\n\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-${boldNum1}-${boldNum2} 🛑`;
-    
-    // 🚦 ব্যাকএন্ড চেক করবে টাইম শিডিউল, তারপরই কেবল নতুন সিগন্যাল ফরোয়ার্ড করবে
-    if (isBackendTimeActive()) {
-        setTimeout(() => { sendTelegramMessage(signalMsg); }, 2000); 
-    }
-}
-
-setInterval(syncEngine, 2000);
-
-// ==========================================
-// ৩. ডাইনামিক কানেকশন (HTML পরিবর্তন না করে সার্ভারের সাথে লিংক)
-// ==========================================
-app.get('/', (req, res) => { 
-    const backgroundSyncScript = `
-    <script>
-        function autoSyncScheduleToServer() {
-            const slots = [];
-            for(let i=1; i<=6; i++) {
-                slots.push({
-                    start: localStorage.getItem('tg_start_'+i),
-                    end: localStorage.getItem('tg_end_'+i)
-                });
-            }
-            
-            const masterToggle = document.getElementById('masterToggle');
-            const payload = {
-                masterOn: masterToggle ? masterToggle.checked : true,
-                alwaysOn: localStorage.getItem('tg_always_on') === 'true',
-                slots: slots
-            };
-            
-            fetch('/api/schedule', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
-            }).catch(e => console.log('Syncing...'));
-        }
-        
-        setInterval(autoSyncScheduleToServer, 3000);
-        setTimeout(autoSyncScheduleToServer, 1000);
-
-        window.sendTelegramMessage = function(text) {
-            console.log("Prediction is handled by 24/7 Backend Server according to your HTML Schedule.");
-        };
-    </script>
     `;
     
-    res.send(htmlCode + backgroundSyncScript); 
+    res.send(htmlCode);
 });
 
-app.listen(PORT, () => { console.log("✅ Live 24/7 Server Running PERFECTLY with Time Scheduler!"); });
+app.listen(PORT, () => {
+    console.log("✅ Server running perfectly!");
+});
