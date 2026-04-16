@@ -194,8 +194,8 @@ const htmlCode = `
     </div>
 
 <script>
-    // ⚠️ TELEGRAM CONFIGURATION
-    const BOT_TOKEN = "8444423580:AAHTUxOmzSBkElBqGKymPD29RTcmDE8_7Ag";
+    // ⚠️ TELEGRAM CONFIGURATION (Hidden via Server)
+    const BOT_TOKEN = "${process.env.BOT_TOKEN}";
     const CHAT_ID = "-1003120065348"; 
 
     const API = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
@@ -290,7 +290,7 @@ const htmlCode = `
 
     // 🚀 TELEGRAM API SENDER
     function sendTelegramMessage(text) {
-        if (!isTimeActive()) return; // Check time condition before sending
+        if (!isTimeActive() || !BOT_TOKEN || BOT_TOKEN === 'undefined') return; 
         let url = \`https://api.telegram.org/bot\${BOT_TOKEN}/sendMessage\`;
         fetch(url, {
             method: "POST",
@@ -436,7 +436,8 @@ fs.writeFileSync('index.html', htmlCode);
 // ==========================================
 // ২. ২৪ ঘণ্টা ব্যাকএন্ড সার্ভার এবং টাইম শিডিউলিং ইঞ্জিন
 // ==========================================
-const BOT_TOKEN = "8444423580:AAHTUxOmzSBkElBqGKymPD29RTcmDE8_7Ag";
+// Secret Token Hidden
+const BOT_TOKEN = process.env.BOT_TOKEN;
 const CHAT_ID = "-1003120065348";
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
@@ -458,7 +459,7 @@ app.post('/api/schedule', (req, res) => {
     res.json({ success: true });
 });
 
-// ✅ ব্যাকএন্ডের নিজস্ব BDT টাইম চেকিং সিস্টেম (যা আপনার HTML এর মতোই হুবহু কাজ করবে)
+// ✅ ব্যাকএন্ডের নিজস্ব BDT টাইম চেকিং সিস্টেম
 function isBackendTimeActive() {
     if (!serverSchedule.masterOn) return false;
     if (serverSchedule.alwaysOn) return true;
@@ -491,6 +492,7 @@ function getUnicodeResult(res) {
 }
 
 async function sendTelegramMessage(text) {
+    if (!BOT_TOKEN) return;
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     try { await axios.post(url, { chat_id: CHAT_ID, text: text }); } catch (error) {}
 }
@@ -558,8 +560,6 @@ setInterval(syncEngine, 2000);
 // ৩. ডাইনামিক কানেকশন (HTML পরিবর্তন না করে সার্ভারের সাথে লিংক)
 // ==========================================
 app.get('/', (req, res) => { 
-    // এই স্ক্রিপ্টটি আপনার অরিজিনাল HTML এর সাথে যুক্ত হয়ে ব্রাউজারে পাঠানো হবে
-    // ফলে আপনার HTML 100% অক্ষত থাকবে, অথচ আপনার ইনপুট করা টাইম ডাটা অটোমেটিক্যালি সার্ভারে চলে যাবে।
     const backgroundSyncScript = `
     <script>
         function autoSyncScheduleToServer() {
@@ -585,12 +585,9 @@ app.get('/', (req, res) => {
             }).catch(e => console.log('Syncing...'));
         }
         
-        // প্রতি ৩ সেকেন্ড পর পর আপনার টাইম আপডেট ব্যাকএন্ডে অটো সেন্ড করবে
         setInterval(autoSyncScheduleToServer, 3000);
         setTimeout(autoSyncScheduleToServer, 1000);
 
-        // ডাবল মেসেজ যাওয়া বন্ধ করতে, ব্রাউজারের মেসেজ সেন্ডিং অফ করে দেওয়া হলো 
-        // (সার্ভার এখন আপনার টাইম অনুযায়ী ২৪ ঘণ্টা মেসেজ পাঠাবে)
         window.sendTelegramMessage = function(text) {
             console.log("Prediction is handled by 24/7 Backend Server according to your HTML Schedule.");
         };
