@@ -1,13 +1,12 @@
 {
-  "name": "cyber-engine-bot",
+  "name": "html-bot",
   "version": "1.0.0",
-  "description": "Telegram 1 Min Prediction Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "axios": "^1.6.7",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "puppeteer": "^21.0.0"
   }
 }
