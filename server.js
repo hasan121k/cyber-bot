@@ -5,9 +5,6 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// ==========================================
-// ANTI-CRASH & ERROR HIDER (কোনো লাল দাগ আসবে না)
-// ==========================================
 process.on('unhandledRejection', () => {});
 process.on('uncaughtException', () => {});
 
@@ -21,9 +18,13 @@ let targetNums = [], currentLevel = 1;
 let lastBroadcastedPeriod = null; 
 
 function isBackendTimeActive() {
-    if (!botSettings.masterOn) return false;
-    if (botSettings.alwaysOn) return true;
+    // যদি মেইন সুইচ অফ থাকে, তবে কোনোভাবেই মেসেজ যাবে না
+    if (botSettings.masterOn === false) return false;
+    
+    // যদি মেইন সুইচ অন থাকে এবং 24/7 Always On থাকে, তবে মেসেজ যাবে
+    if (botSettings.alwaysOn === true) return true;
 
+    // যদি 24/7 অফ থাকে, তবে শিডিউল টাইম চেক করবে
     const now = new Date();
     const bdtTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Dhaka" }));
     const currentMins = bdtTime.getHours() * 60 + bdtTime.getMinutes();
@@ -54,6 +55,9 @@ function getUnicodeResult(res) {
 
 async function sendTelegramMessage(period, text) {
     if (!BOT_TOKEN) return;
+    
+    // ডাবল মেসেজ বা অফ থাকলে মেসেজ ব্লক করা
+    if (!isBackendTimeActive()) return; 
     if (lastBroadcastedPeriod === period && period !== "TEST") return;
     if (period !== "TEST") lastBroadcastedPeriod = period;
 
@@ -64,27 +68,21 @@ async function sendTelegramMessage(period, text) {
     } catch (error) {}
 }
 
-// ==========================================
-// 3-WAY ROTATING PROXY BYPASS (লটারি সাইট ব্লক করতে পারবে না)
-// ==========================================
 async function fetchLotteryData() {
     const timestamp = Date.now();
     const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' };
     
-    // ১. ডিরেক্ট চেষ্টা
     try {
         const res1 = await axios.get(`${API_URL}?t=${timestamp}`, { headers, timeout: 4000 });
         if (res1.data && res1.data.data) return res1.data;
     } catch (e) {}
 
-    // ২. প্রক্সি সার্ভার ১ চেষ্টা
     try {
         const proxy1 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(API_URL + "?t=" + timestamp)}`;
         const res2 = await axios.get(proxy1, { timeout: 4000 });
         if (res2.data && res2.data.data) return res2.data;
     } catch (e) {}
 
-    // ৩. প্রক্সি সার্ভার ২ চেষ্টা
     try {
         const proxy2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(API_URL + "?t=" + timestamp)}`;
         const res3 = await axios.get(proxy2, { timeout: 4000 });
@@ -139,43 +137,35 @@ async function runBotEngine() {
                 setTimeout(() => { sendTelegramMessage(nextPeriodLast3 + "_sig", signalMsg); }, 2000); 
             }
         }
-    } catch (e) {
-        // একদম সাইলেন্ট। কোনো কনসোল লগ হবে না।
-    }
+    } catch (e) {}
 }
 
-// 3.5 সেকেন্ড পরপর ডাটা আনবে, যাতে লটারি সাইট ব্লক না করে
 async function loopEngine() {
     await runBotEngine();
     setTimeout(loopEngine, 3500); 
 }
 loopEngine(); 
 
-// ==========================================
-// API Routes
-// ==========================================
-app.get('/ping', (req, res) => { res.status(200).send("Bot is Alive & Running 24/7!"); });
+app.get('/ping', (req, res) => { res.status(200).send("Bot is Alive & Running!"); });
 
+// HTML থেকে ডেটা লাইভ সিঙ্ক করার রুট
 app.post('/api/sync', (req, res) => {
     if(req.body.chatId !== undefined) botSettings.chatId = req.body.chatId;
-    botSettings.masterOn = req.body.masterOn;
-    botSettings.alwaysOn = req.body.alwaysOn;
-    botSettings.slots = req.body.slots;
+    if(req.body.masterOn !== undefined) botSettings.masterOn = req.body.masterOn;
+    if(req.body.alwaysOn !== undefined) botSettings.alwaysOn = req.body.alwaysOn;
+    if(req.body.slots !== undefined) botSettings.slots = req.body.slots;
     res.json({status: "ok"});
 });
 
 app.post('/api/test-tg', async (req, res) => {
-    if (!BOT_TOKEN) return res.json({success: false, error: "BOT_TOKEN missing in Render Settings!"});
+    if (!BOT_TOKEN) return res.json({success: false, error: "BOT_TOKEN missing!"});
     const targetChat = req.body.chatId && req.body.chatId.trim() !== "" ? req.body.chatId : "-1003120065348";
     try {
-        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { chat_id: targetChat, text: "✅ [TEST SUCCESS] Your Bot is connected and working perfectly!" });
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { chat_id: targetChat, text: "✅ [TEST SUCCESS] Bot connected perfectly!" });
         res.json({success: true});
     } catch (err) { res.json({success: false, error: err.message}); }
 });
 
-// ==========================================
-// HTML 
-// ==========================================
 app.get('/', (req, res) => {
     const htmlCode = `
 <!DOCTYPE html>
@@ -247,13 +237,14 @@ app.get('/', (req, res) => {
 
             <div class="tg-switch-card" style="flex-direction: column; align-items: stretch; gap: 5px;">
                 <span style="text-align: center;"><i class="fab fa-telegram"></i> TARGET CHAT ID / USER CODE</span>
-                <input type="text" id="tgChatIdInput" class="chat-id-input" placeholder="Enter Chat ID (e.g. -1003120...)">
+                <input type="text" id="tgChatIdInput" class="chat-id-input" placeholder="Enter Chat ID" oninput="syncWithServer()">
             </div>
 
             <div class="tg-switch-card">
                 <span><i class="fas fa-paper-plane"></i> MAIN TG FORWARD</span>
                 <label class="switch">
-                    <input type="checkbox" id="masterToggle" checked>
+                    <!-- onchange অ্যাড করা হয়েছে যেন অফ করলেই সার্ভার অফ হয় -->
+                    <input type="checkbox" id="masterToggle" onchange="syncWithServer()" checked>
                     <span class="slider"></span>
                 </label>
             </div>
@@ -261,7 +252,7 @@ app.get('/', (req, res) => {
             <div class="tg-switch-card" style="border-color: var(--neon-violet);">
                 <span style="color: var(--neon-violet);"><i class="fas fa-infinity"></i> 24/7 ALWAYS ON (No Time)</span>
                 <label class="switch">
-                    <input type="checkbox" id="alwaysOnToggle" checked>
+                    <input type="checkbox" id="alwaysOnToggle" onchange="syncWithServer()" checked>
                     <span class="slider"></span>
                 </label>
             </div>
@@ -276,9 +267,9 @@ app.get('/', (req, res) => {
                             document.write(\`
                                 <div class="time-row">
                                     <span>SLOT \${i}:</span>
-                                    <input type="time" id="start_\${i}">
+                                    <input type="time" id="start_\${i}" onchange="syncWithServer()">
                                     <span>TO</span>
-                                    <input type="time" id="end_\${i}">
+                                    <input type="time" id="end_\${i}" onchange="syncWithServer()">
                                 </div>
                             \`);
                         }
@@ -332,6 +323,9 @@ app.get('/', (req, res) => {
     const sLoss = new Audio('https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3');
     const sDing = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
+    function getUnicodeNumber(str) { const map = {'0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'}; return str.split('').map(c => map[c] || c).join(''); }
+    function getUnicodeResult(res) { return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋"; }
+
     function loadSchedules() {
         for(let i=1; i<=6; i++) {
             let start = localStorage.getItem('tg_start_'+i);
@@ -370,6 +364,7 @@ app.get('/', (req, res) => {
         } catch(e) { alert("❌ Server Error!"); }
     }
 
+    // এই ফাংশনটি এখন সরাসরি সার্ভারের সাথে লাইভ যোগাযোগ করবে
     function syncWithServer() {
         let slots = [];
         for(let i=1; i<=6; i++) {
@@ -390,6 +385,9 @@ app.get('/', (req, res) => {
         }).catch(err => {});
     }
 
+    // প্রতি ২ সেকেন্ড পর পর সার্ভারকে আপডেট পাঠাবে যেন সার্ভার না ভুলে যায়
+    setInterval(syncWithServer, 2000);
+
     function isTimeActive() {
         const masterOn = document.getElementById('masterToggle').checked;
         const alwaysOn = document.getElementById('alwaysOnToggle').checked;
@@ -404,7 +402,7 @@ app.get('/', (req, res) => {
 
     window.onload = () => {
         loadSchedules(); 
-        setTimeout(() => syncWithServer(), 1000);
+        syncWithServer(); // পেজ লোড হলেই সার্ভারকে জানিয়ে দেবে
         setTimeout(() => {
             document.getElementById('introScreen').style.opacity = '0';
             setTimeout(() => {
@@ -486,4 +484,4 @@ app.get('/', (req, res) => {
     res.send(htmlCode);
 });
 
-app.listen(PORT, () => { console.log(`✅ Server is Running 24/7 with VIP Proxy Bypass!`); });
+app.listen(PORT, () => { console.log(`✅ Server is Running 24/7! (Live Switch Active)`); });
