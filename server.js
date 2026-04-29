@@ -5,14 +5,10 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// ==========================================
-// ANTI-CRASH SYSTEM
-// ==========================================
 process.on('unhandledRejection', (reason, promise) => {});
 process.on('uncaughtException', (err) => {});
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-// CHAT_ID এখন ডাইনামিক, তাই গ্লোবাল ভেরিয়েবল বাদ দেওয়া হয়েছে।
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
 let botSettings = { masterOn: true, alwaysOn: false, chatId: "", slots: [] };
@@ -54,14 +50,13 @@ function getUnicodeResult(res) {
 
 async function sendTelegramMessage(text) {
     if (!BOT_TOKEN) return;
-    
-    // UI থেকে দেওয়া Chat ID নিবে, যদি ফাঁকা থাকে তবে আগের ডিফল্ট আইডিতে পাঠাবে
     const targetChat = botSettings.chatId && botSettings.chatId.trim() !== "" ? botSettings.chatId : "-1003120065348";
-
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     try { 
         await axios.post(url, { chat_id: targetChat, text: text }, { timeout: 5000 }); 
-    } catch (error) {}
+    } catch (error) {
+        console.log("Telegram Error:", error.response?.data?.description || error.message);
+    }
 }
 
 async function runBotEngine() {
@@ -74,7 +69,6 @@ async function runBotEngine() {
         };
 
         const response = await axios.get(API_URL + '?t=' + Date.now(), { headers: headers, timeout: 5000 });
-        
         if (!response.data || !response.data.data || !response.data.data.list) return;
 
         const list = response.data.data.list;
@@ -120,11 +114,13 @@ async function runBotEngine() {
             }
         }
     } catch (e) {
+        console.log("API Fetch Error");
     }
 }
 
 setInterval(runBotEngine, 2000);
 
+// API Routes
 app.get('/ping', (req, res) => { res.status(200).send("Bot is Alive!"); });
 
 app.post('/api/sync', (req, res) => {
@@ -133,8 +129,24 @@ app.post('/api/sync', (req, res) => {
 });
 
 // ==========================================
-// মূল HTML (নতুন Chat ID ইনপুট বক্স অ্যাড করা হয়েছে)
+// TEST TELEGRAM ROUTE
 // ==========================================
+app.post('/api/test-tg', async (req, res) => {
+    if (!BOT_TOKEN) return res.json({success: false, error: "BOT_TOKEN is missing in Render Settings!"});
+    const targetChat = req.body.chatId && req.body.chatId.trim() !== "" ? req.body.chatId : "-1003120065348";
+    
+    try {
+        await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+            chat_id: targetChat,
+            text: "✅ [TEST SUCCESS] Your Bot is connected and working perfectly!"
+        });
+        res.json({success: true});
+    } catch (err) {
+        res.json({success: false, error: err.response?.data?.description || err.message});
+    }
+});
+
+// HTML
 app.get('/', (req, res) => {
     const htmlCode = `
 <!DOCTYPE html>
@@ -145,60 +157,28 @@ app.get('/', (req, res) => {
     <title>REAL OWNER 1 MIN - CYBER ENGINE</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        :root { 
-            --glass: rgba(0, 255, 255, 0.08);
-            --border: rgba(0, 255, 255, 0.35);
-            --neon-cyan: #00ffff;
-            --neon-violet: #8a2be2;
-            --cyber-lime: #ccff00;
-            --deep-dark: #0b0c1e;
-        }
-
-        body, html {
-            height: 100%; margin: 0; font-family: 'Segoe UI', system-ui, sans-serif;
-            background: var(--deep-dark); color: #e0f0ff; overflow-x: hidden; user-select: none;
-        }
-
-        #introScreen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: var(--deep-dark); display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 10000;
-            transition: opacity 0.8s ease-out;
-        }
-        .intro-line {
-            font-size: clamp(26px, 8vw, 46px); font-weight: 800; letter-spacing: 5px; white-space: nowrap;
-            text-transform: uppercase; border-right: 4px solid var(--neon-cyan); padding-right: 12px; 
-            animation: typing 2s steps(22), blink 0.5s step-end infinite; overflow: hidden; 
-            text-shadow: 0 0 20px var(--neon-violet), 0 0 40px var(--neon-cyan); color: #ffffff;
-        }
+        :root { --glass: rgba(0,255,255,0.08); --border: rgba(0,255,255,0.35); --neon-cyan: #00ffff; --neon-violet: #8a2be2; --cyber-lime: #ccff00; --deep-dark: #0b0c1e; }
+        body, html { height: 100%; margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--deep-dark); color: #e0f0ff; overflow-x: hidden; user-select: none; }
+        #introScreen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--deep-dark); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 10000; transition: opacity 0.8s ease-out; }
+        .intro-line { font-size: clamp(26px, 8vw, 46px); font-weight: 800; letter-spacing: 5px; white-space: nowrap; text-transform: uppercase; border-right: 4px solid var(--neon-cyan); padding-right: 12px; animation: typing 2s steps(22), blink 0.5s step-end infinite; overflow: hidden; text-shadow: 0 0 20px var(--neon-violet), 0 0 40px var(--neon-cyan); color: #ffffff; }
         .intro-line span { color: var(--neon-cyan); text-shadow: 0 0 15px var(--neon-cyan); }
         @keyframes typing { from { width: 0 } to { width: 100% } }
         @keyframes blink { from, to { border-color: transparent } 50% { border-color: var(--neon-cyan) } }
-
         .app-frame { max-width: 480px; margin: auto; padding: 15px; }
-        .glass-card {
-            background: rgba(10, 20, 30, 0.5); backdrop-filter: blur(16px) saturate(180%);
-            border: 1px solid var(--border); border-radius: 24px;
-            padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 35px -5px rgba(0, 255, 255, 0.3);
-        }
-
+        .glass-card { background: rgba(10, 20, 30, 0.5); backdrop-filter: blur(16px) saturate(180%); border: 1px solid var(--border); border-radius: 24px; padding: 20px; margin-bottom: 20px; box-shadow: 0 10px 35px -5px rgba(0, 255, 255, 0.3); }
         .header { text-align: center; border-bottom: 2px solid var(--neon-cyan); padding-bottom: 10px; margin-bottom: 20px; }
         .header span:first-child { color: #ffffff; font-weight: 800; letter-spacing: 2px; }
         .header span:last-child { color: var(--neon-cyan); font-weight: 400; }
-
         .pred-val { font-size: 75px; font-weight: 900; text-shadow: 0 0 25px var(--neon-violet), 0 0 45px var(--neon-cyan); margin: 10px 0; color: #fff; }
         .timer-display { font-size: 26px; color: var(--cyber-lime); font-weight: bold; text-shadow: 0 0 10px #ccff00; }
         .status-info { display: flex; justify-content: space-between; font-size: 11px; color: var(--neon-cyan); margin-bottom: 10px; letter-spacing: 0.5px;}
-
         .strat-mode { font-size: 10px; background: rgba(138, 43, 226, 0.25); padding: 4px 14px; border-radius: 30px; color: var(--cyber-lime); border: 1px solid var(--neon-cyan); margin-bottom: 12px; display: inline-block; font-weight: 600; }
-
         .lvl-badge { background: rgba(0, 255, 255, 0.1); border: 1px solid var(--neon-cyan); padding: 8px; border-radius: 40px; font-weight: bold; margin: 15px 0; font-size: 13px; color: #fff; box-shadow: 0 0 8px var(--neon-cyan); }
         .num-row { display: flex; justify-content: center; gap: 30px; }
         .num-circle { width: 50px; height: 50px; line-height: 50px; border: 2px solid var(--cyber-lime); border-radius: 50%; font-weight: 900; background: rgba(0,0,0,0.5); color: var(--cyber-lime); font-size: 22px; box-shadow: 0 0 15px var(--cyber-lime); }
-
         .btn-clear { width: 100%; padding: 12px; background: linear-gradient(90deg, #ff2a5e, #b030b0); border: none; border-radius: 40px; color: white; font-weight: 800; cursor: pointer; box-shadow: 0 0 15px rgba(255, 42, 94, 0.6); font-size: 11px; margin-top: 10px; }
         .btn-glow { width: 100%; padding: 12px; background: linear-gradient(115deg, #00c8ff, #8a2be2); border: none; border-radius: 12px; color: white; font-weight: 800; cursor: pointer; box-shadow: 0 0 15px #00ffff; text-transform: uppercase; margin-top: 10px;}
-
+        .btn-test { width: 100%; padding: 12px; background: linear-gradient(115deg, #00d2ff, #3a7bd5); border: none; border-radius: 12px; color: white; font-weight: 800; cursor: pointer; box-shadow: 0 0 15px #00d2ff; text-transform: uppercase; margin-top: 10px;}
         .history-wrap { max-height: 400px; overflow-y: auto; border-radius: 16px; padding-right: 5px; }
         table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: center; }
         th { color: var(--neon-cyan); padding: 10px 4px; border-bottom: 1px solid var(--neon-violet); }
@@ -207,7 +187,6 @@ app.get('/', (req, res) => {
         .loss { color: #ff10f0; font-weight: bold; text-shadow: 0 0 5px magenta; }
         .hidden { display: none !important; }
         #pID { color: rgba(200, 230, 255, 0.7); font-size: 12px; font-weight: bold; }
-
         .tg-switch-card { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.6); padding: 12px 15px; border-radius: 15px; border: 1px solid var(--neon-cyan); margin-bottom: 10px; }
         .tg-switch-card span { color: var(--neon-cyan); font-weight: 800; font-size: 12px; letter-spacing: 1px;}
         .switch { position: relative; display: inline-block; width: 44px; height: 22px; }
@@ -216,14 +195,10 @@ app.get('/', (req, res) => {
         .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--cyber-lime); border-color: var(--cyber-lime); box-shadow: 0 0 10px var(--cyber-lime); }
         input:checked + .slider:before { transform: translateX(22px); background-color: #000; }
-        
         #tgLogText { font-size: 12px; text-align: center; margin-bottom: 15px; font-weight: bold; text-transform: uppercase; }
-
         .time-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; color: #fff;}
         input[type="time"] { background: rgba(0, 20, 30, 0.9); border: 1px solid var(--neon-cyan); border-radius: 6px; color: var(--cyber-lime); padding: 5px; outline: none; font-weight: bold; text-align: center; width: 100px; font-family: inherit;}
         input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer;}
-        
-        /* NEW CHAT ID INPUT STYLE */
         .chat-id-input { width: 100%; background: rgba(0,20,30,0.9); border: 1px solid var(--neon-cyan); border-radius: 8px; color: var(--cyber-lime); padding: 10px; outline: none; font-weight: bold; box-sizing: border-box; text-align: center; margin-top: 5px; }
         .chat-id-input::placeholder { color: rgba(204, 255, 0, 0.4); }
     </style>
@@ -241,7 +216,6 @@ app.get('/', (req, res) => {
                 <span style="font-size: 26px; font-weight: 800;">REAL OWNER  </span><span style="font-size: 22px; color: var(--neon-cyan);">PRO</span>
             </div>
 
-            <!-- NEW CHAT ID INPUT BOX -->
             <div class="tg-switch-card" style="flex-direction: column; align-items: stretch; gap: 5px;">
                 <span style="text-align: center;"><i class="fab fa-telegram"></i> TARGET CHAT ID / USER CODE</span>
                 <input type="text" id="tgChatIdInput" class="chat-id-input" placeholder="Enter Chat ID (e.g. -1003120...)">
@@ -283,6 +257,7 @@ app.get('/', (req, res) => {
                     </script>
                 </div>
                 <button class="btn-glow" onclick="saveSchedules()">💾 SAVE SETTINGS</button>
+                <button class="btn-test" onclick="triggerTestMessage()">🚀 TEST TELEGRAM MESSAGE</button>
             </div>
 
             <div id="hackSection">
@@ -355,7 +330,27 @@ app.get('/', (req, res) => {
         localStorage.setItem('tg_chat_id', document.getElementById('tgChatIdInput').value);
         
         syncWithServer();
-        alert("✅ Settings & Schedule Saved Successfully!");
+        alert("✅ Settings Saved Successfully!");
+    }
+
+    async function triggerTestMessage() {
+        const chatId = document.getElementById('tgChatIdInput').value;
+        alert("⏳ Sending Test Message... Please check your Telegram!");
+        try {
+            const res = await fetch('/api/test-tg', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ chatId: chatId })
+            });
+            const data = await res.json();
+            if(data.success) {
+                alert("✅ Success! Test message sent to Telegram.");
+            } else {
+                alert("❌ Error: " + data.error);
+            }
+        } catch(e) {
+            alert("❌ Server Error!");
+        }
     }
 
     function syncWithServer() {
@@ -372,7 +367,7 @@ app.get('/', (req, res) => {
             body: JSON.stringify({
                 masterOn: document.getElementById('masterToggle').checked,
                 alwaysOn: document.getElementById('alwaysOnToggle').checked,
-                chatId: document.getElementById('tgChatIdInput').value, // NEW CHAT ID SYNC
+                chatId: document.getElementById('tgChatIdInput').value, 
                 slots: slots
             })
         }).catch(err => {});
