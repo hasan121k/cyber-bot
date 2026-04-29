@@ -5,21 +5,20 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.json());
 
-// Anti-Crash
-process.on('unhandledRejection', (reason, promise) => {});
-process.on('uncaughtException', (err) => {});
+// ==========================================
+// ANTI-CRASH & MEMORY LEAK PROTECTOR
+// ==========================================
+process.on('unhandledRejection', () => {});
+process.on('uncaughtException', () => {});
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
-// ডিফল্ট সেটিংসে alwaysOn: true এবং আপনার চ্যাট আইডি দিয়ে দেওয়া হলো, যেন সার্ভার একা একাই কাজ শুরু করে।
+// ডিফল্টভাবে Always On করা হলো, যেন ব্রাউজার ছাড়াই সার্ভার কাজ শুরু করে।
 let botSettings = { masterOn: true, alwaysOn: true, chatId: "-1003120065348", slots: [] };
 
 let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null;
 let targetNums = [], currentLevel = 1;
-
-// ডাবল মেসেজ প্রোটেকশন (Frontend বা Backend যেই আগে পাঠাবে, অন্যজন আর পাঠাবে না)
-let lastBroadcastedPeriod = null;
 
 function isBackendTimeActive() {
     if (!botSettings.masterOn) return false;
@@ -49,36 +48,44 @@ function getUnicodeNumber(str) {
     return str.split('').map(c => map[c] || c).join('');
 }
 
-function getUnicodeResult(res) { return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋"; }
+function getUnicodeResult(res) {
+    return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋";
+}
 
-async function broadcastToTelegram(period, text) {
+async function sendTelegramMessage(text) {
     if (!BOT_TOKEN) return;
-    
-    // ডাবল মেসেজ ব্লক সিস্টেম
-    if (lastBroadcastedPeriod === period && period !== "TEST") return;
-    if (period !== "TEST") lastBroadcastedPeriod = period;
-
     const targetChat = botSettings.chatId && botSettings.chatId.trim() !== "" ? botSettings.chatId : "-1003120065348";
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-    
     try { 
         await axios.post(url, { chat_id: targetChat, text: text }, { timeout: 5000 }); 
     } catch (error) {}
 }
 
-// 24/7 Backend Engine
+// ==========================================
+// 24/7 BACKEND ENGINE (NO BROWSER NEEDED)
+// ==========================================
 async function runBotEngine() {
     try {
-        const headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Referer': 'https://draw.ar-lottery01.com/'
-        };
+        let responseData = null;
 
-        const response = await axios.get(API_URL + '?t=' + Date.now(), { headers: headers, timeout: 5000 });
-        if (!response.data || !response.data.data || !response.data.data.list) return;
+        // চেষ্টা ১: ডিরেক্ট লটারি সাইট থেকে ডাটা আনার চেষ্টা
+        try {
+            const headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json'
+            };
+            const res = await axios.get(API_URL + '?t=' + Date.now(), { headers: headers, timeout: 4000 });
+            responseData = res.data;
+        } catch (err) {
+            // চেষ্টা ২: যদি ব্লক করে দেয়, তবে প্রক্সি সার্ভারের মাধ্যমে বাইপাস করে আনবে
+            const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(API_URL + "?t=" + Date.now());
+            const resProxy = await axios.get(proxyUrl, { timeout: 5000 });
+            responseData = resProxy.data;
+        }
 
-        const list = response.data.data.list;
+        if (!responseData || !responseData.data || !responseData.data.list) return;
+
+        const list = responseData.data.list;
         const latestData = list[0];
         
         if (lastFetchedPeriod !== latestData.issueNumber) {
@@ -96,7 +103,7 @@ async function runBotEngine() {
                     `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\n     \n  💥 𝐊𝐔𝐏 𝐌𝐀𝐌𝐀 ☠️` : 
                     `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\n     \n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑`;
                     
-                if (isBackendTimeActive()) await broadcastToTelegram(finishedPeriodLast3 + "_res", winLossMsg);
+                if (isBackendTimeActive()) await sendTelegramMessage(winLossMsg);
             }
             
             // Next Prediction
@@ -117,37 +124,36 @@ async function runBotEngine() {
             let signalMsg = `🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \n   \n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\n\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(nextPeriodLast3)} 🔔\n\n        📣 𝐁𝐄𝐓:-${getUnicodeResult(currentSignalResult)} ✅\n\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-${getUnicodeNumber(targetNums[0].toString())}-${getUnicodeNumber(targetNums[1].toString())} 🛑`;
             
             if (isBackendTimeActive()) {
-                setTimeout(() => { broadcastToTelegram(nextPeriodLast3 + "_sig", signalMsg); }, 2000); 
+                setTimeout(() => { sendTelegramMessage(signalMsg); }, 2000); 
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        // কোনো এরর আসলে ইগনোর করবে, মেমরি ফুল হবে না
+    }
 }
 
-setInterval(runBotEngine, 2000);
+// Memory Leak Fix: setInterval এর বদলে recursive loop (সার্ভার ক্র্যাশ রোধে)
+async function loopEngine() {
+    await runBotEngine();
+    setTimeout(loopEngine, 2000); // একটি রিকোয়েস্ট শেষ হলে ২ সেকেন্ড পর আরেকটি যাবে
+}
+loopEngine(); // ইঞ্জিন চালু করা হলো
 
 // ==========================================
 // API Routes
 // ==========================================
-app.get('/ping', (req, res) => { res.status(200).send("Bot is Alive!"); });
+app.get('/ping', (req, res) => { res.status(200).send("Bot is Alive & Running 24/7!"); });
 
 app.post('/api/sync', (req, res) => {
-    if(req.body.chatId) botSettings.chatId = req.body.chatId;
+    if(req.body.chatId !== undefined) botSettings.chatId = req.body.chatId;
     botSettings.masterOn = req.body.masterOn;
     botSettings.alwaysOn = req.body.alwaysOn;
     botSettings.slots = req.body.slots;
     res.json({status: "ok"});
 });
 
-// ফ্রন্টএন্ড রিলের মাধ্যমে মেসেজ পাঠানোর রুট
-app.post('/api/relay-msg', async (req, res) => {
-    if (isBackendTimeActive()) {
-        await broadcastToTelegram(req.body.periodId, req.body.msg);
-    }
-    res.json({success: true});
-});
-
 app.post('/api/test-tg', async (req, res) => {
-    if (!BOT_TOKEN) return res.json({success: false, error: "BOT_TOKEN is missing in Render Settings!"});
+    if (!BOT_TOKEN) return res.json({success: false, error: "BOT_TOKEN missing in Render Settings!"});
     const targetChat = req.body.chatId && req.body.chatId.trim() !== "" ? req.body.chatId : "-1003120065348";
     try {
         await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, { chat_id: targetChat, text: "✅ [TEST SUCCESS] Your Bot is connected and working perfectly!" });
@@ -156,7 +162,7 @@ app.post('/api/test-tg', async (req, res) => {
 });
 
 // ==========================================
-// HTML (Frontend Relay Added)
+// HTML (Design Unchanged)
 // ==========================================
 app.get('/', (req, res) => {
     const htmlCode = `
@@ -314,9 +320,6 @@ app.get('/', (req, res) => {
     const sLoss = new Audio('https://assets.mixkit.co/active_storage/sfx/951/951-preview.mp3');
     const sDing = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
-    function getUnicodeNumber(str) { const map = {'0':'𝟎','1':'𝟏','2':'𝟐','3':'𝟑','4':'𝟒','5':'𝟓','6':'𝟔','7':'𝟕','8':'𝟖','9':'𝟗'}; return str.split('').map(c => map[c] || c).join(''); }
-    function getUnicodeResult(res) { return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋"; }
-
     function loadSchedules() {
         for(let i=1; i<=6; i++) {
             let start = localStorage.getItem('tg_start_'+i);
@@ -375,8 +378,6 @@ app.get('/', (req, res) => {
         }).catch(err => {});
     }
 
-    setInterval(syncWithServer, 3000);
-
     function isTimeActive() {
         const masterOn = document.getElementById('masterToggle').checked;
         const alwaysOn = document.getElementById('alwaysOnToggle').checked;
@@ -384,7 +385,7 @@ app.get('/', (req, res) => {
 
         if (!masterOn) { logText.innerText = "❌ MAIN SWITCH IS OFF"; logText.style.color = "#ff10f0"; return; }
         if (alwaysOn) { logText.innerText = "✅ 24/7 FORWARDING ACTIVE"; logText.style.color = "#00ffff"; return; }
-        logText.innerText = "✅ SETTINGS SENT TO SERVER"; logText.style.color = "#ccff00";
+        logText.innerText = "✅ SCHEDULE ACTIVE"; logText.style.color = "#ccff00";
     }
 
     setInterval(isTimeActive, 1000);
@@ -416,15 +417,7 @@ app.get('/', (req, res) => {
         }, 1000);
     }
 
-    // ফ্রন্টএন্ড থেকে সার্ভারে মেসেজ পাঠানোর রিকোয়েস্ট
-    function sendSignalToBackend(periodId, msg) {
-        fetch('/api/relay-msg', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ periodId: periodId, msg: msg })
-        }).catch(err => {});
-    }
-
+    // HTML এর ভিতরের ইঞ্জিন শুধু আপনার ব্রাউজারে ডাটা দেখাবে, টেলিগ্রামে মেসেজ পাঠাবে না। (কারণ সার্ভার নিজেই পাঠাচ্ছে)
     async function syncEngine() {
         try {
             const r = await fetch(API + '?t=' + Date.now());
@@ -453,12 +446,6 @@ app.get('/', (req, res) => {
             if (historyLogs.length > 100) historyLogs = historyLogs.slice(0, 100);
             const row = \`<tr><td>\${entry.period}</td><td>\${entry.pred}</td><td>\${entry.result}</td><td class="\${entry.winClass}">\${entry.status}</td></tr>\`;
             document.getElementById('logs').innerHTML = row + document.getElementById('logs').innerHTML;
-
-            let winLossMsg = isWin ? 
-                `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\n     \n  💥 𝐊𝐔𝐏 𝐌𝐀𝐌𝐀 ☠️` : 
-                `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\n     \n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑`;
-            
-            sendSignalToBackend(finishedPeriodLast3 + "_res", winLossMsg);
         }
         
         const nextPeriodNum = (BigInt(finishedPeriod) + 1n).toString();
@@ -481,10 +468,6 @@ app.get('/', (req, res) => {
         document.getElementById('pRes').innerText = currentSignalResult;
         document.getElementById('pRes').style.color = currentSignalResult === "BIG" ? "#00ffff" : "#ccff00";
         document.getElementById('numRow').innerHTML = \`<div class="num-circle">\${targetNums[0]}</div><div class="num-circle">\${targetNums[1]}</div>\`;
-
-        let signalMsg = `🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \n   \n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\n\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(nextPeriodLast3)} 🔔\n\n        📣 𝐁𝐄𝐓:-${getUnicodeResult(currentSignalResult)} ✅\n\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-${getUnicodeNumber(targetNums[0].toString())}-${getUnicodeNumber(targetNums[1].toString())} 🛑`;
-        
-        setTimeout(() => { sendSignalToBackend(nextPeriodLast3 + "_sig", signalMsg); }, 2000);
     }
 </script>
 </body>
@@ -492,4 +475,4 @@ app.get('/', (req, res) => {
     res.send(htmlCode);
 });
 
-app.listen(PORT, () => { console.log(`✅ Server is perfectly Live!`); });
+app.listen(PORT, () => { console.log(`✅ Server is Running 24/7! (No Browser Needed)`); });
