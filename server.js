@@ -6,7 +6,7 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 
 // ==========================================
-// ANTI-CRASH & MEMORY LEAK PROTECTOR
+// ANTI-CRASH & ERROR HIDER (কোনো লাল দাগ আসবে না)
 // ==========================================
 process.on('unhandledRejection', () => {});
 process.on('uncaughtException', () => {});
@@ -14,11 +14,11 @@ process.on('uncaughtException', () => {});
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
-// ডিফল্টভাবে Always On করা হলো, যেন ব্রাউজার ছাড়াই সার্ভার কাজ শুরু করে।
 let botSettings = { masterOn: true, alwaysOn: true, chatId: "-1003120065348", slots: [] };
 
 let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null;
 let targetNums = [], currentLevel = 1;
+let lastBroadcastedPeriod = null; 
 
 function isBackendTimeActive() {
     if (!botSettings.masterOn) return false;
@@ -52,8 +52,11 @@ function getUnicodeResult(res) {
     return res === "BIG" ? "𝐁𝐈𝐆" : "𝐒𝐌𝐀𝐋𝐋";
 }
 
-async function sendTelegramMessage(text) {
+async function sendTelegramMessage(period, text) {
     if (!BOT_TOKEN) return;
+    if (lastBroadcastedPeriod === period && period !== "TEST") return;
+    if (period !== "TEST") lastBroadcastedPeriod = period;
+
     const targetChat = botSettings.chatId && botSettings.chatId.trim() !== "" ? botSettings.chatId : "-1003120065348";
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     try { 
@@ -62,27 +65,38 @@ async function sendTelegramMessage(text) {
 }
 
 // ==========================================
-// 24/7 BACKEND ENGINE (NO BROWSER NEEDED)
+// 3-WAY ROTATING PROXY BYPASS (লটারি সাইট ব্লক করতে পারবে না)
 // ==========================================
+async function fetchLotteryData() {
+    const timestamp = Date.now();
+    const headers = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36' };
+    
+    // ১. ডিরেক্ট চেষ্টা
+    try {
+        const res1 = await axios.get(`${API_URL}?t=${timestamp}`, { headers, timeout: 4000 });
+        if (res1.data && res1.data.data) return res1.data;
+    } catch (e) {}
+
+    // ২. প্রক্সি সার্ভার ১ চেষ্টা
+    try {
+        const proxy1 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(API_URL + "?t=" + timestamp)}`;
+        const res2 = await axios.get(proxy1, { timeout: 4000 });
+        if (res2.data && res2.data.data) return res2.data;
+    } catch (e) {}
+
+    // ৩. প্রক্সি সার্ভার ২ চেষ্টা
+    try {
+        const proxy2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(API_URL + "?t=" + timestamp)}`;
+        const res3 = await axios.get(proxy2, { timeout: 4000 });
+        if (res3.data && res3.data.data) return res3.data;
+    } catch (e) {}
+
+    return null;
+}
+
 async function runBotEngine() {
     try {
-        let responseData = null;
-
-        // চেষ্টা ১: ডিরেক্ট লটারি সাইট থেকে ডাটা আনার চেষ্টা
-        try {
-            const headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json'
-            };
-            const res = await axios.get(API_URL + '?t=' + Date.now(), { headers: headers, timeout: 4000 });
-            responseData = res.data;
-        } catch (err) {
-            // চেষ্টা ২: যদি ব্লক করে দেয়, তবে প্রক্সি সার্ভারের মাধ্যমে বাইপাস করে আনবে
-            const proxyUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(API_URL + "?t=" + Date.now());
-            const resProxy = await axios.get(proxyUrl, { timeout: 5000 });
-            responseData = resProxy.data;
-        }
-
+        const responseData = await fetchLotteryData();
         if (!responseData || !responseData.data || !responseData.data.list) return;
 
         const list = responseData.data.list;
@@ -94,7 +108,6 @@ async function runBotEngine() {
             const actualResult = number >= 5 ? "BIG" : "SMALL";
             const finishedPeriodLast3 = latestData.issueNumber.slice(-3);
             
-            // Win/Loss Check
             if (currentSignalPeriod && currentSignalPeriod === latestData.issueNumber) {
                 const isWin = (currentSignalResult === actualResult) || targetNums.includes(number);
                 if(isWin) { currentLevel = 1; } else { currentLevel++; if(currentLevel > 4) currentLevel = 1; }
@@ -103,10 +116,9 @@ async function runBotEngine() {
                     `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🏆 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐖𝐈𝐍𝐍 💯\n     \n  💥 𝐊𝐔𝐏 𝐌𝐀𝐌𝐀 ☠️` : 
                     `🌐 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(finishedPeriodLast3)} 👑\n\n🚫 𝐑𝐄𝐒𝐔𝐋𝐓𝐒:-𝐋𝐎𝐒𝐒 ❌\n     \n     💔 𝐍𝐎 𝐏𝐄𝐑𝐀 🛑`;
                     
-                if (isBackendTimeActive()) await sendTelegramMessage(winLossMsg);
+                if (isBackendTimeActive()) await sendTelegramMessage(finishedPeriodLast3 + "_res", winLossMsg);
             }
             
-            // Next Prediction
             const nextPeriodNum = (BigInt(latestData.issueNumber) + 1n).toString();
             const nextPeriodLast3 = nextPeriodNum.slice(-3);
             const last5 = list.slice(0, 5).map(x => parseInt(x.number) >= 5 ? "BIG" : "SMALL");
@@ -124,20 +136,20 @@ async function runBotEngine() {
             let signalMsg = `🟣 𝐖𝐈𝐍𝐆𝐎 𝟏 𝐌𝐈𝐍𝐔𝐓𝐄𝐒 🟢 \n   \n🌐 𝟒-𝟓 𝐒𝐓𝐀𝐏 𝐅𝐎𝐋𝐋𝐎𝐖 🌐\n\n      🔰 𝐏𝐄𝐑𝐈𝐎𝐃:-${getUnicodeNumber(nextPeriodLast3)} 🔔\n\n        📣 𝐁𝐄𝐓:-${getUnicodeResult(currentSignalResult)} ✅\n\n ➡️ 𝐍𝐔𝐌𝐁𝐄𝐑 𝐁𝐄𝐓:-${getUnicodeNumber(targetNums[0].toString())}-${getUnicodeNumber(targetNums[1].toString())} 🛑`;
             
             if (isBackendTimeActive()) {
-                setTimeout(() => { sendTelegramMessage(signalMsg); }, 2000); 
+                setTimeout(() => { sendTelegramMessage(nextPeriodLast3 + "_sig", signalMsg); }, 2000); 
             }
         }
     } catch (e) {
-        // কোনো এরর আসলে ইগনোর করবে, মেমরি ফুল হবে না
+        // একদম সাইলেন্ট। কোনো কনসোল লগ হবে না।
     }
 }
 
-// Memory Leak Fix: setInterval এর বদলে recursive loop (সার্ভার ক্র্যাশ রোধে)
+// 3.5 সেকেন্ড পরপর ডাটা আনবে, যাতে লটারি সাইট ব্লক না করে
 async function loopEngine() {
     await runBotEngine();
-    setTimeout(loopEngine, 2000); // একটি রিকোয়েস্ট শেষ হলে ২ সেকেন্ড পর আরেকটি যাবে
+    setTimeout(loopEngine, 3500); 
 }
-loopEngine(); // ইঞ্জিন চালু করা হলো
+loopEngine(); 
 
 // ==========================================
 // API Routes
@@ -162,7 +174,7 @@ app.post('/api/test-tg', async (req, res) => {
 });
 
 // ==========================================
-// HTML (Design Unchanged)
+// HTML 
 // ==========================================
 app.get('/', (req, res) => {
     const htmlCode = `
@@ -417,7 +429,6 @@ app.get('/', (req, res) => {
         }, 1000);
     }
 
-    // HTML এর ভিতরের ইঞ্জিন শুধু আপনার ব্রাউজারে ডাটা দেখাবে, টেলিগ্রামে মেসেজ পাঠাবে না। (কারণ সার্ভার নিজেই পাঠাচ্ছে)
     async function syncEngine() {
         try {
             const r = await fetch(API + '?t=' + Date.now());
@@ -475,4 +486,4 @@ app.get('/', (req, res) => {
     res.send(htmlCode);
 });
 
-app.listen(PORT, () => { console.log(`✅ Server is Running 24/7! (No Browser Needed)`); });
+app.listen(PORT, () => { console.log(`✅ Server is Running 24/7 with VIP Proxy Bypass!`); });
