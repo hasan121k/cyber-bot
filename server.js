@@ -12,10 +12,10 @@ process.on('unhandledRejection', (reason, promise) => {});
 process.on('uncaughtException', (err) => {});
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
-const CHAT_ID = "-1003120065348";
+// CHAT_ID এখন ডাইনামিক, তাই গ্লোবাল ভেরিয়েবল বাদ দেওয়া হয়েছে।
 const API_URL = "https://draw.ar-lottery01.com/WinGo/WinGo_1M/GetHistoryIssuePage.json";
 
-let botSettings = { masterOn: true, alwaysOn: false, slots: [] };
+let botSettings = { masterOn: true, alwaysOn: false, chatId: "", slots: [] };
 
 let lastFetchedPeriod = null, currentSignalPeriod = null, currentSignalResult = null;
 let targetNums = [], currentLevel = 1;
@@ -54,15 +54,18 @@ function getUnicodeResult(res) {
 
 async function sendTelegramMessage(text) {
     if (!BOT_TOKEN) return;
+    
+    // UI থেকে দেওয়া Chat ID নিবে, যদি ফাঁকা থাকে তবে আগের ডিফল্ট আইডিতে পাঠাবে
+    const targetChat = botSettings.chatId && botSettings.chatId.trim() !== "" ? botSettings.chatId : "-1003120065348";
+
     const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
     try { 
-        await axios.post(url, { chat_id: CHAT_ID, text: text }, { timeout: 5000 }); 
+        await axios.post(url, { chat_id: targetChat, text: text }, { timeout: 5000 }); 
     } catch (error) {}
 }
 
 async function runBotEngine() {
     try {
-        // 🔴 ফেইক ব্রাউজার হেডার (403 Error Bypass করার জন্য)
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             'Accept': 'application/json, text/plain, */*',
@@ -117,7 +120,6 @@ async function runBotEngine() {
             }
         }
     } catch (e) {
-        // এরর লগ বন্ধ রাখা হলো যেন Render হ্যাং না করে
     }
 }
 
@@ -131,7 +133,7 @@ app.post('/api/sync', (req, res) => {
 });
 
 // ==========================================
-// মূল HTML (কোনো চেঞ্জ করা হয়নি)
+// মূল HTML (নতুন Chat ID ইনপুট বক্স অ্যাড করা হয়েছে)
 // ==========================================
 app.get('/', (req, res) => {
     const htmlCode = `
@@ -220,6 +222,10 @@ app.get('/', (req, res) => {
         .time-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 11px; color: #fff;}
         input[type="time"] { background: rgba(0, 20, 30, 0.9); border: 1px solid var(--neon-cyan); border-radius: 6px; color: var(--cyber-lime); padding: 5px; outline: none; font-weight: bold; text-align: center; width: 100px; font-family: inherit;}
         input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer;}
+        
+        /* NEW CHAT ID INPUT STYLE */
+        .chat-id-input { width: 100%; background: rgba(0,20,30,0.9); border: 1px solid var(--neon-cyan); border-radius: 8px; color: var(--cyber-lime); padding: 10px; outline: none; font-weight: bold; box-sizing: border-box; text-align: center; margin-top: 5px; }
+        .chat-id-input::placeholder { color: rgba(204, 255, 0, 0.4); }
     </style>
 </head>
 <body>
@@ -235,8 +241,14 @@ app.get('/', (req, res) => {
                 <span style="font-size: 26px; font-weight: 800;">REAL OWNER  </span><span style="font-size: 22px; color: var(--neon-cyan);">PRO</span>
             </div>
 
+            <!-- NEW CHAT ID INPUT BOX -->
+            <div class="tg-switch-card" style="flex-direction: column; align-items: stretch; gap: 5px;">
+                <span style="text-align: center;"><i class="fab fa-telegram"></i> TARGET CHAT ID / USER CODE</span>
+                <input type="text" id="tgChatIdInput" class="chat-id-input" placeholder="Enter Chat ID (e.g. -1003120...)">
+            </div>
+
             <div class="tg-switch-card">
-                <span><i class="fab fa-telegram"></i> MAIN TG FORWARD</span>
+                <span><i class="fas fa-paper-plane"></i> MAIN TG FORWARD</span>
                 <label class="switch">
                     <input type="checkbox" id="masterToggle" checked>
                     <span class="slider"></span>
@@ -270,7 +282,7 @@ app.get('/', (req, res) => {
                         }
                     </script>
                 </div>
-                <button class="btn-glow" onclick="saveSchedules()">💾 SAVE SCHEDULE</button>
+                <button class="btn-glow" onclick="saveSchedules()">💾 SAVE SETTINGS</button>
             </div>
 
             <div id="hackSection">
@@ -328,6 +340,10 @@ app.get('/', (req, res) => {
         if(alwaysOn !== null) {
             document.getElementById('alwaysOnToggle').checked = (alwaysOn === 'true');
         }
+        let savedChatId = localStorage.getItem('tg_chat_id');
+        if(savedChatId) {
+            document.getElementById('tgChatIdInput').value = savedChatId;
+        }
     }
 
     function saveSchedules() {
@@ -336,8 +352,10 @@ app.get('/', (req, res) => {
             localStorage.setItem('tg_end_'+i, document.getElementById('end_'+i).value);
         }
         localStorage.setItem('tg_always_on', document.getElementById('alwaysOnToggle').checked);
+        localStorage.setItem('tg_chat_id', document.getElementById('tgChatIdInput').value);
+        
         syncWithServer();
-        alert("✅ Schedule Saved Successfully!");
+        alert("✅ Settings & Schedule Saved Successfully!");
     }
 
     function syncWithServer() {
@@ -354,6 +372,7 @@ app.get('/', (req, res) => {
             body: JSON.stringify({
                 masterOn: document.getElementById('masterToggle').checked,
                 alwaysOn: document.getElementById('alwaysOnToggle').checked,
+                chatId: document.getElementById('tgChatIdInput').value, // NEW CHAT ID SYNC
                 slots: slots
             })
         }).catch(err => {});
@@ -369,7 +388,7 @@ app.get('/', (req, res) => {
         if (!masterOn) { logText.innerText = "❌ MAIN SWITCH IS OFF"; logText.style.color = "#ff10f0"; return; }
         if (alwaysOn) { logText.innerText = "✅ 24/7 FORWARDING ACTIVE"; logText.style.color = "#00ffff"; return; }
         
-        logText.innerText = "✅ SCHEDULE SENT TO SERVER"; logText.style.color = "#ccff00";
+        logText.innerText = "✅ SETTINGS SENT TO SERVER"; logText.style.color = "#ccff00";
     }
 
     setInterval(isTimeActive, 1000);
